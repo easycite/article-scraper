@@ -19,39 +19,49 @@ def thread_function(db, queue):
     # 
     maxDepth  = 10
     while True:
-        if not queue.empty():
-            curr_qObj = queue.get()
-            print(curr_qObj.docId)
+        curr_qObj = queue.get()
+        print(curr_qObj.docId)
 
-            # print(curr_qObj)
-            docId = curr_qObj.docId
-            docTitle = curr_qObj.title
-            direction = curr_qObj.direction
-            depth =curr_qObj.depth
+        # print(curr_qObj)
+        docId = curr_qObj.docId
+        docTitle = curr_qObj.title
+        direction = curr_qObj.direction
+        depth =curr_qObj.depth
 
-            refBool = True
-            citeBool = True
+        refBool = True
+        citeBool = True
 
-            if direction == 'down':
-                citeBool = False 
-            elif direction == 'up':
-                refBool = False
+        if direction == 'down':
+            citeBool = False 
+        elif direction == 'up':
+            refBool = False
 
-            if depth < maxDepth:
-                doc = Document(id=docId, title=docTitle,citeBool=citeBool, refBool=refBool)
-                db.insert_document(docId=docId, title=docTitle, docReferences= doc.references, docCitations = doc.citations)
-                newDepth = depth + 1
-                for ref in doc.references:                
-                    newQObj = qObject(docId=ref,direction='down',depth=newDepth)
-                    queue.put(newQObj)
+        if depth < maxDepth:
+            doc = Document(id=docId, title=docTitle,citeBool=citeBool, refBool=refBool)
+            authors = []
+            for author in doc.authors:
+                authName = ''
+                if 'firstName' in author:
+                    authName += author['firstName'] + ' '
+                if 'lastName' in author:
+                    authName+= author['lastName']
+                authors.append(authName)
+
+            db.insert_document(docId=docId, title=docTitle, docReferences= doc.references, docCitations = doc.citations, authors=authors)
+            newDepth = depth + 1
+            for ref in doc.references:                
+                newQObj = qObject(docId=ref,direction='down',depth=newDepth)
+                queue.put(newQObj)
+            
+            for cite in doc.citations:
                 
-                for cite in doc.citations:
-                    
-                    newQObj = qObject(docId=cite,direction='up',depth=newDepth)
-                    queue.put(newQObj)
+                newQObj = qObject(docId=cite,direction='up',depth=newDepth)
+                queue.put(newQObj)
 
-                sleep(10)
-        
+
+
+            sleep(10)
+    
 
 
 def main():

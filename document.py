@@ -23,11 +23,14 @@ class Document:
         if id != None:
             self.id = id
             self.title = self.get_doc_title_by_id(id)
+            self.authors = self.get_authors_by_doc_search(docTitle = self.title, docId = id)
             if refBool:
                 self.references = self.get_refs_by_doc_id(id)
             
             if citeBool:
                 self.citations = self.get_citations_by_id(id)
+
+            
             # TO DO: add self.authors
 
         elif title != None:
@@ -75,20 +78,23 @@ class Document:
 
     def get_citations_by_id(self, docId):
         #TO DO: ADD ERROR HANDLING
+        citationList = []
+
         headers = {
             'Referer': 'https://ieeexplore.ieee.org/document/'+docId+'/citations',
             }
 
         response = requests.get('https://ieeexplore.ieee.org/rest/document/'+ docId +'/citations', headers=headers)
         respDict = json.loads(response.text)
-        citationDict = respDict['paperCitations']['ieee']
-        citationList = []
-        for citation in citationDict:
-            if 'links' in citation:
-                linksDict = citation['links']
-                if 'documentLink' in linksDict:
-                    citationId = list(filter(None, linksDict['documentLink'].split('/')))[1]
-                    citationList.append(citationId)
+        if 'paperCitations' in respDict:
+            if 'ieee' in respDict['paperCitations']:
+                citationDict = respDict['paperCitations']['ieee']
+                for citation in citationDict:
+                    if 'links' in citation:
+                        linksDict = citation['links']
+                        if 'documentLink' in linksDict:
+                            citationId = list(filter(None, linksDict['documentLink'].split('/')))[1]
+                            citationList.append(citationId)
         return citationList
         # print(respDict['paperCitations']['ieee'][0]['links']['documentLink'])
 
@@ -131,6 +137,36 @@ class Document:
         
         responseDict = json.loads(response.text)
         return responseDict
+
+    def get_authors_by_doc_search(self, docTitle, docId):
+        results = {}
+        docAuthorList = []
+
+        searchResults = self.search_by_doc_name(docTitle) #will return a dictionary 
+        # print(searchResults)
+        if 'records' not in searchResults:
+            print(f'No results for {docName}')
+            return None
+
+        try:
+            for i, result in enumerate(searchResults['records']):
+                if 'articleNumber' in result:
+                    if result['articleNumber'] == docId:
+                        authors = searchResults['records'][i]['authors']
+                        for author in authors:
+                            authDict = {}
+                            if 'firstName' in author:
+                                authDict['firstName'] = author['firstName']
+                            if 'lastName' in author:
+                                authDict['lastName'] = author['lastName']
+                            if 'id' in author:
+                                authDict['id'] = author['id']
+                            docAuthorList.append(authDict)
+                        break
+            return  docAuthorList
+
+        except:
+            print(f'No author information for {docTitle}')
 
     def get_refs_by_doc_name(self, docName):
         results = {}
