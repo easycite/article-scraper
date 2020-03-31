@@ -21,7 +21,9 @@ def thread_function(db, queue):
     while True:
         if not queue.empty():
             curr_qObj = queue.get()
-            print(curr_qObj)
+            print(curr_qObj.docId)
+
+            # print(curr_qObj)
             docId = curr_qObj.docId
             docTitle = curr_qObj.title
             direction = curr_qObj.direction
@@ -38,10 +40,19 @@ def thread_function(db, queue):
             if depth < maxDepth:
                 doc = Document(id=docId, title=docTitle,citeBool=citeBool, refBool=refBool)
                 db.insert_document(docId=docId, title=docTitle, docReferences= doc.references, docCitations = doc.citations)
-                sleep(10)
+                newDepth = depth + 1
+                for ref in doc.references:                
+                    newQObj = qObject(docId=ref,direction='down',depth=newDepth)
+                    queue.put(newQObj)
+                
+                for cite in doc.citations:
+                    
+                    newQObj = qObject(docId=cite,direction='up',depth=newDepth)
+                    queue.put(newQObj)
 
-def add_to_queue(queue,docId, docTitle):
-    pass
+                sleep(10)
+        
+
 
 def main():
     # These are set using environment variables
@@ -55,9 +66,9 @@ def main():
     refsQueue = Queue()
 
     # TESTING --------------------------------------------------------------
-    for i in range(10):
-        qObj = qObject(docId=str(i),direction='down',depth=i)
-        refsQueue.put(qObj)
+    testId = '8862080'
+    qObj = qObject(docId=testId,direction='down',depth=0)
+    refsQueue.put(qObj)
     x = threading.Thread(target=thread_function, args=(db, refsQueue))
     x.start()
     # TESTING ---------------------------------------------------------------
