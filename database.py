@@ -21,7 +21,7 @@ class Database:
             
         else:
             with self.driver.session() as session:
-                print(f'Here are the refs:{docReferences} ')
+                # print(f'Here are the refs:{docReferences} ')
 
                 if docId and title:
                     idQuery = "MATCH (d:Document {id:'" + docId + "'}) RETURN d"
@@ -31,11 +31,12 @@ class Database:
                     titleResult = session.run(titleQuery)
 
                     if idResult.peek() and titleResult.peek():
+                        print('yep')
                         for ref in docReferences:
                             query = "MERGE (d:Document {id:'"+ docId +"', title: '"+ title +" '}) MERGE (ref: Document {id:'"+ ref +"'}) MERGE (d)-[c:CITES]->(ref) RETURN d, ref, c "
                             results = session.run(query)
                         for citation in docCitations:
-                            citationQuery = "MERGE (citation:Document {id: '"+ citation +"' })  MATCH (d:Document {id: '"+docId+"', title: '" + title + "'}) MERGE (citation)-[c:CITES]->(d) RETURN citaion, d, c"
+                            citationQuery = "MERGE (citation:Document {id: '"+ citation +"' })  MERGE (d:Document {id: '"+docId+"', title: '" + title + "'}) MERGE (citation)-[c:CITES]->(d) RETURN citaion, d, c"
                             citationResult = session.run(citationQuery)
                         
                     elif idResult.peek() and not titleResult.peek():
@@ -65,13 +66,14 @@ class Database:
                         print('Here')
                         docQuery = "CREATE (d:Document {title: '"+ title +"', id: '" + docId + "'} )"
                         docResults  = session.run(docQuery)
-                        print(docResults)
+                        # print(docResults)
                         for ref in docReferences:
-                            query = "MATCH (d:Document { title: '"+ title +"', id:'" + docId + "'}) MERGE (ref: Document {id:'"+ ref +"'}) MERGE (d)-[c:CITES]->(ref) RETURN d, ref, c "                  
+                            query = "MERGE (d:Document { title: '"+ title +"', id:'" + docId + "'}) MERGE (ref: Document {id:'"+ ref +"'}) MERGE (d)-[c:CITES]->(ref) RETURN d, ref, c "                  
                             results = session.run(query)
 
                         for citation in docCitations:
-                            citationQuery = "MERGE (citation:Document {id: '"+ citation +"' })  MATCH (d:Document {title: '"+ title +"', id:'" + docId + "'}) MERGE (citation)-[c:CITES]->(d) RETURN citation, d, c"
+                            print(f'cites: {citation}')
+                            citationQuery = "MERGE (citation:Document {id: '"+ citation +"' })  MERGE (d:Document {title: '"+ title +"', id:'" + docId + "'}) MERGE (citation)-[c:CITES]->(d) RETURN citation, d, c"
                             citationResult = session.run(citationQuery)
 
                 elif docId:

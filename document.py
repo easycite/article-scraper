@@ -4,7 +4,7 @@ import json
 class Document:
 
     def __init__(self, title=None, id=None):
-        self.id = id
+        self.id = id 
         self.title = title
         self.authors = None
         self.references = []
