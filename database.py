@@ -98,4 +98,7 @@ class Database:
                         citationQuery = "MERGE (citation:Document {id: '"+ citation +"' })  MATCH (d:Document {title: '"+ title +"'}) MERGE (citation)-[c:CITES]->(d) RETURN citation, d, c"
                         citationResult = session.run(citationQuery)
                     
-        
+    def get_document_refs(self, docId):
+        pass
+
+    

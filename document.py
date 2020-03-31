@@ -3,7 +3,7 @@ import json
 
 class Document:
 
-    def __init__(self, title=None, id=None):
+    def __init__(self, title=None, id=None, citeBool=True, refBool=True):
         self.id = id 
         self.title = title
         self.authors = None
@@ -22,9 +22,12 @@ class Document:
 
         if id != None:
             self.id = id
-            self.references = self.get_refs_by_doc_id(id)
             self.title = self.get_doc_title_by_id(id)
-            self.citations = self.get_citations_by_id(id)
+            if refBool:
+                self.references = self.get_refs_by_doc_id(id)
+            
+            if citeBool:
+                self.citations = self.get_citations_by_id(id)
             # TO DO: add self.authors
 
         elif title != None:
@@ -34,9 +37,10 @@ class Document:
 
             if 'docId' in results:
                 self.id = results['docId']
-                self.citations = self.get_citations_by_id(self.id)
+                if citeBool:    
+                    self.citations = self.get_citations_by_id(self.id)
             
-            if 'references' in results:
+            if refBool and'references' in results:
                 self.references = results['references']
             
             if 'authors' in results:
@@ -56,16 +60,17 @@ class Document:
         refReq = requests.get(GetLink, headers=Headers)
 
         docRefsDict = json.loads(refReq.text)
-
-        refsList = docRefsDict['references']
         refDocIds = []
-        for ref in refsList:
-            if 'links' in ref:
-                linksDict = ref['links']
-                if 'documentLink' in linksDict:
-                    # print(linksDict['documentLink'])
-                    refId = list(filter(None, linksDict['documentLink'].split('/')))[1]
-                    refDocIds.append(refId)
+        if 'references' in docRefsDict:
+            refsList = docRefsDict['references']
+            
+            for ref in refsList:
+                if 'links' in ref:
+                    linksDict = ref['links']
+                    if 'documentLink' in linksDict:
+                        # print(linksDict['documentLink'])
+                        refId = list(filter(None, linksDict['documentLink'].split('/')))[1]
+                        refDocIds.append(refId)
         return refDocIds
 
     def get_citations_by_id(self, docId):
