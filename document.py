@@ -6,8 +6,11 @@ class Document:
     def __init__(self, title=None, id=None):
         self.id = id
         self.title = title
-        self.references = []
         self.authors = None
+        self.references = []
+        self.citations = []
+        
+
 
         # TO DO:
         # - publish date (conference date, or publish date, in that order)
@@ -21,7 +24,7 @@ class Document:
             self.id = id
             self.references = self.get_refs_by_doc_id(id)
             self.title = self.get_doc_title_by_id(id)
-
+            self.citations = self.get_citations_by_id(id)
             # TO DO: add self.authors
 
         elif title != None:
@@ -31,17 +34,20 @@ class Document:
 
             if 'docId' in results:
                 self.id = results['docId']
+                self.citations = self.get_citations_by_id(self.id)
             
             if 'references' in results:
                 self.references = results['references']
             
             if 'authors' in results:
                 self.authors = results['authors']
+
             
     
     def get_refs_by_doc_id(self, docId):
         '''
-        Given a document id returns a dictionary of that document's references
+        Given a document id returns a list of that document's references
+        returns a list of reference document ids
         '''
 
         RefsLink = 'https://ieeexplore.ieee.org/document/' + docId + '/references'
@@ -61,6 +67,25 @@ class Document:
                     refId = list(filter(None, linksDict['documentLink'].split('/')))[1]
                     refDocIds.append(refId)
         return refDocIds
+
+    def get_citations_by_id(self, docId):
+        #TO DO: ADD ERROR HANDLING
+        headers = {
+            'Referer': 'https://ieeexplore.ieee.org/document/'+docId+'/citations',
+            }
+
+        response = requests.get('https://ieeexplore.ieee.org/rest/document/'+ docId +'/citations', headers=headers)
+        respDict = json.loads(response.text)
+        citationDict = respDict['paperCitations']['ieee']
+        citationList = []
+        for citation in citationDict:
+            if 'links' in citation:
+                linksDict = citation['links']
+                if 'documentLink' in linksDict:
+                    citationId = list(filter(None, linksDict['documentLink'].split('/')))[1]
+                    citationList.append(citationId)
+        return citationList
+        # print(respDict['paperCitations']['ieee'][0]['links']['documentLink'])
 
     def get_doc_title_by_id(self, docId):
         docTitle = ''
@@ -129,21 +154,12 @@ class Document:
 
         try:
             docId = list(filter(None, searchResults['records'][0]['documentLink'].split('/')))[1]
-            docRefsDict = self.get_refs_by_doc_id(docId)
-            refsList = docRefsDict['references']
-            
-
-            refDocIds = []
-            for ref in refsList:
-                if 'links' in ref:
-                    linksDict = ref['links']
-                    if 'documentLink' in linksDict:
-                        # print(linksDict['documentLink'])
-                        refId = list(filter(None, linksDict['documentLink'].split('/')))[1]
-                        refDocIds.append(refId)
+            refsList = self.get_refs_by_doc_id(docId)
+            # print(refsList)
+        
             results['docId'] = docId 
-            results['references'] = refDocIds            
+            results['references'] = refsList           
         except:
-            print(f'Can\'t get reference information for {docName}')
+            print(f'Can\'t get reference information for {docName} \n')
 
         return results
