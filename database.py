@@ -21,10 +21,11 @@ class Database:
             return None
 
         with self.driver.session() as session:
+            print(f'Here are the refs:{docReferences} ')
 
             if docId and title:
                 idQuery = "MATCH (d:Document {id:'" + docId + "'}) RETURN d"
-                titleQuery = "MATCH (d:Document {title:'"+ title+"'} RETURN d"
+                titleQuery = "MATCH (d:Document {title:'"+ title+"'}) RETURN d"
 
                 idResult = session.run(idQuery)
                 titleResult = session.run(titleQuery)
@@ -44,16 +45,20 @@ class Database:
                     docQuery = "MATCH (d:Document {title:'" + title + "'}) SET d.id = '" + docId + "' RETURN d"
                     docResult = session.run(docQuery)
                     for ref in docReferences:
+                        print(ref)
                         titleQuery = "MATCH (d:Document {id:'" + title + "'}) MERGE (ref: Document {id:'"+ ref +"'}) MERGE (d)-[:CITES]->(ref) RETURN d, ref, c"
                         titleResult = session.run(idQuery)
+                        print(titleResult.value())
 
                 else:
+                    print('Here')
                     docQuery = "CREATE (d:Document {title: '"+ title +"', id: '" + docId + "'} )"
                     docResults  = session.run(docQuery)
+                    print(docResults)
                     for ref in docReferences:
                         query = "MATCH (d:Document { title: '"+ title +"', id:'" + docId + "'}) MERGE (ref: Document {id:'"+ ref +"'}) MERGE (d)-[c:CITES]->(ref) RETURN d, ref, c "                  
                         results = session.run(query)
-                        
+
             elif docId:
                 docQuery = "MERGE (d:Document {id:'" + docId + "'}) RETURN d"
                 docResult = session.run(docQuery)
@@ -66,6 +71,6 @@ class Database:
                 docResult = session.run(docQuery)
                 for ref in docReferences:
                     titleQuery = "MATCH (d:Document {title:'" + title + "'}) MERGE (ref: Document {id:'"+ ref +"'}) MERGE (d)-[c:CITES]->(ref) RETURN d, ref, c"
-                    titleResult = session.run(idQuery)
+                    titleResult = session.run(titleQuery)
 
         
