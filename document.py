@@ -1,12 +1,21 @@
 import requests 
 import json
+import re
+from dateutil import parser
+
+docPattern = re.compile(r'global\.document\.metadata=([\s\S]+?);?\s*</script>', re.IGNORECASE)
+datePattern = re.compile(r'\d+-(\d+\s+\w+\s+\d+)')
 
 class Document:
 
     def __init__(self, title=None, id=None, citeBool=True, refBool=True):
         self.id = id 
         self.title = title
-        self.authors = None
+        self.abstract = None
+        self.publishDate = None
+        self.publicationTitle = None
+        self.authors = []
+        self.keywords = []
         self.references = []
         self.citations = []
         
@@ -22,16 +31,12 @@ class Document:
 
         if id != None:
             self.id = id
-            self.title = self.get_doc_title_by_id(id)
-            self.authors = self.get_authors_by_doc_search(docTitle = self.title, docId = id)
+            self.populate_info_from_doc_page()
+
             if refBool:
                 self.references = self.get_refs_by_doc_id(id)
-            
             if citeBool:
                 self.citations = self.get_citations_by_id(id)
-
-            
-            # TO DO: add self.authors
 
         elif title != None:
             self.title = title
@@ -145,7 +150,7 @@ class Document:
         searchResults = self.search_by_doc_name(docTitle) #will return a dictionary 
         # print(searchResults)
         if 'records' not in searchResults:
-            print(f'No results for {docName}')
+            print(f'No results for {docTitle}')
             return None
 
         try:
@@ -204,3 +209,50 @@ class Document:
             print(f'Can\'t get reference information for {docName} \n')
 
         return results
+    
+    def populate_info_from_doc_page(self):
+        url = f'https://ieeexplore.ieee.org/document/{self.id}'
+
+        rsp = requests.get(url)
+
+        metadataMatch = docPattern.search(rsp.text)
+        if metadataMatch is not None:
+            j = metadataMatch.group(1)
+            metadata = json.loads(j)
+
+            self.title = metadata['title']
+            self.abstract = metadata.get('abstract')
+
+            self.publishDate = None
+            try:
+                date = metadata.get('chronOrPublicationDate', '')
+                dateMatch = datePattern.search(date)
+                if dateMatch is not None:
+                    date = dateMatch.group(1)
+                try:
+                    self.publishDate = parser.parse(date)
+                except:
+                    pass
+            except:
+                pass
+
+            if self.publishDate is None:
+                try:
+                    self.publishDate = parser.parse(metadata.get('publicationDate', ''))
+                except:
+                    pass
+            
+            self.publicationTitle = metadata.get('publicationTitle')
+            
+            for author in metadata.get('authors', []):
+                a = {
+                    'name': author.get('name'),
+                    'firstName': author.get('firstName'),
+                    'lastName': author.get('lastName')
+                }
+                self.authors.append(a)
+            
+            for kwdGroup in metadata.get('keywords', []):
+                if kwdGroup.get('type') == 'IEEE Keywords':
+                    for kwd in kwdGroup['kwd']:
+                        self.keywords.append(kwd.lower())

@@ -13,59 +13,83 @@ class Database:
         self.uri = uri
         self.driver = GraphDatabase.driver(uri, auth=(user,password))
 
-
-    def insert_document(self, docId=None, title=None, docReferences=[], docCitations=[], authors = []):
-
-        if not docId and not title:
-            print('A document id and/or title must be provided.')
-            
-        else:
-            with self.driver.session() as session:
-                # print(f'Here are the refs:{docReferences} ')
-
-                if docId and title:
-                    # This will work assuming that no document in database exists with a title but no id
-                    # In theory, this should be true always
-
-                    idQuery = "MERGE (d:Document {id:'" + docId + "'}) ON CREATE SET d.title = '"+ title +"' RETURN d"
-                    idResult = session.run(idQuery)
-
-                    for ref in docReferences:
-                        query = "MATCH (d:Document {id:'"+ docId +"', title: '"+ title +" '}) MERGE (ref: Document {id:'"+ ref +"'}) MERGE (d)-[c:CITES]->(ref) RETURN d, ref, c "
-                        results = session.run(query)
-                    for citation in docCitations:
-                        citationQuery = "MERGE (citation:Document {id: '"+ citation +"' })  MATCH (d:Document {id: '"+docId+"', title: '" + title + "'}) MERGE (citation)-[c:CITES]->(d) RETURN citaion, d, c"
-                        citationResult = session.run(citationQuery)
-                        
-                elif docId:
-                    docQuery = "MERGE (d:Document {id:'" + docId + "'}) RETURN d"
-                    docResult = session.run(docQuery)
-                    for ref in docReferences:
-                        idQuery = "MATCH (d:Document {id:'" + docId + "'}) MERGE (ref: Document {id:'"+ ref +"'}) MERGE (d)-[c:CITES]->(ref) RETURN d, ref, c "
-                        idResult = session.run(idQuery)
-
-                    for citation in docCitations:
-                        citationQuery = "MERGE (citation:Document {id: '"+ citation +"' })  MATCH (d:Document {id: '"+docId+"'}) MERGE (citation)-[c:CITES]->(d) RETURN citation, d, c"
-                        citationResult = session.run(citationQuery)
-                    
-
-                elif title:
-                    # In theory this should never be called. A document with a title will never be inserted without an id
-                    docQuery = "MERGE (d:Document {title:'" + title + "'}) RETURN d"
-                    docResult = session.run(docQuery)
-                    for ref in docReferences:
-                        titleQuery = "MATCH (d:Document {title:'" + title + "'}) MERGE (ref: Document {id:'"+ ref +"'}) MERGE (d)-[c:CITES]->(ref) RETURN d, ref, c"
-                        titleResult = session.run(titleQuery)
-                    for citation in docCitations:
-                        citationQuery = "MERGE (citation:Document {id: '"+ citation +"' })  MATCH (d:Document {title: '"+ title +"'}) MERGE (citation)-[c:CITES]->(d) RETURN citation, d, c"
-                        citationResult = session.run(citationQuery)
-
-                for author in authors:
-                    # print(author)
-                    authorQuery = "MATCH (d:Document {id:'"+ docId +"'}) MERGE (a:Author {name:'"+author+"'}) MERGE (a)-[:AUTHORED]->(d) RETURN a,d"
-                    authorResult= session.run(authorQuery)
-                    # print(authorResult)
-
-
-
+    def doc_is_visited(self, docId):
+        with self.driver.session() as session:
+            existQuery = 'MATCH (d:Document { id: $id }) RETURN d.visited'
+            result = session.run(existQuery, id=docId).single()
+            return result is not None and result['d.visited'] == True
     
+    def get_references(self, docId):
+        with self.driver.session() as session:
+            refQuery = 'MATCH (d:Document { id: $id })-[:CITES]->(ref:Document) RETURN ref.id'
+            results = session.run(refQuery, id=docId).records()
+            refs = []
+            for result in results:
+                refs.append(result['ref.id'])
+            return refs
+
+    def get_citations(self, docId):
+        with self.driver.session() as session:
+            refQuery = 'MATCH (d:Document { id: $id })<-[:CITES]-(ref:Document) RETURN ref.id'
+            results = session.run(refQuery, id=docId).records()
+            refs = []
+            for result in results:
+                refs.append(result['ref.id'])
+            return refs
+    
+    def call_page_rank(self):
+        with self.driver.session() as session:
+            query = "CALL algo.pageRank('Document', 'CITES', { iterations: 20, dampingFactory: 0.85, write: true, writeProperty: 'pageRank' })"
+            session.run(query)
+
+    def insert_document(self, doc):
+        if not doc:
+            raise ValueError('A document is required.')
+            
+        with self.driver.session() as session:
+            # create the document if it doesn't already exist
+            docQuery = '''
+                MERGE (d:Document { id: $id })
+                ON MATCH SET d.visited = true
+                SET d.title = $title,
+                    d.abstract = $abstract,
+                    d.publishDate = $publishDate,
+                    d.publicationTitle = $publicationTitle
+            '''
+            session.run(docQuery, id=doc.id, title=doc.title, abstract=doc.abstract, publishDate=doc.publishDate, publicationTitle=doc.publicationTitle)
+            
+            for author in doc.authors:
+                authorQuery = '''
+                    MATCH (d:Document { id: $id })
+                    MERGE (a:Author { name: $name })
+                    ON CREATE SET a.firstName = $firstName,
+                        a.lastName = $lastName
+                    MERGE (a)-[:AUTHORED]->(d)
+                '''
+                session.run(authorQuery, id=doc.id, name=author['name'], firstName=author['firstName'], lastName=author['lastName'])
+            
+            for kwd in doc.keywords:
+                kwdQuery = '''
+                    MATCH (d:Document { id: $id })
+                    MERGE (k:Keyword { keyword: $kwd })
+                    MERGE (d)-[:TAGGED_BY]->(k)
+                '''
+                session.run(kwdQuery, id=doc.id, kwd=kwd)
+
+            for ref in doc.references:
+                refQuery = '''
+                    MATCH (d:Document { id: $id })
+                    MERGE (ref:Document { id: $ref })
+                    ON CREATE SET ref.visited = false
+                    MERGE (d)-[:CITES]->(ref)
+                '''
+                session.run(refQuery, id=doc.id, ref=ref)
+
+            for citation in doc.citations:
+                citationQuery = '''
+                    MATCH (d:Document { id: $id })
+                    MERGE (citation:Document { id: $citation })
+                    ON CREATE SET citation.visited = false
+                    MERGE (citation)-[:CITES]->(d)
+                '''
+                session.run(citationQuery, id=doc.id, citation=citation)

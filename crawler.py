@@ -12,15 +12,17 @@ class qObject:
         self.direction = direction
         self.depth = depth
 
-def thread_function(db, queue):
+def thread_function(db: Database, queue):
     # lock function
     # pop from queue
     # insert to database
     # 
-    maxDepth  = 10
+    maxDepth = 3
+    iterations = 1
+    pageRankPerIter = 10
     while True:
         curr_qObj = queue.get()
-        print(curr_qObj.docId)
+        print('started', curr_qObj.docId)
 
         # print(curr_qObj)
         docId = curr_qObj.docId
@@ -35,36 +37,42 @@ def thread_function(db, queue):
             citeBool = False 
         elif direction == 'up':
             refBool = False
+        
+        if depth >= maxDepth:
+            print('skipping', curr_qObj.docId, queue.qsize())
+            continue
 
-        if depth < maxDepth:
-            doc = Document(id=docId, title=docTitle,citeBool=citeBool, refBool=refBool)
-            authors = []
-            for author in doc.authors:
-                authName = ''
-                if 'firstName' in author:
-                    authName += author['firstName'] + ' '
-                if 'lastName' in author:
-                    authName+= author['lastName']
-                authors.append(authName)
+        newDepth = depth + 1
 
-            db.insert_document(docId=docId, title=docTitle, docReferences= doc.references, docCitations = doc.citations, authors=authors)
-            newDepth = depth + 1
+        if db.doc_is_visited(docId):
+            for ref in db.get_references(docId):
+                newQObj = qObject(docId=ref,direction='down',depth=newDepth)
+                queue.put_nowait(newQObj)
+            for cite in db.get_citations(docId):
+                newQObj = qObject(docId=cite,direction='up',depth=newDepth)
+                queue.put_nowait(newQObj)
+        else:
+            doc = Document(id=docId, title=docTitle, citeBool=citeBool, refBool=refBool)
+            # try:
+            #     doc = Document(id=docId, title=docTitle, citeBool=citeBool, refBool=refBool)
+            # except:
+            #     print('failed', curr_qObj.docId, queue.qsize())
+            #     continue
+            db.insert_document(doc)
+            iterations = (iterations + 1) % pageRankPerIter
+            if iterations == 0:
+                db.call_page_rank()
+
             for ref in doc.references:                
                 newQObj = qObject(docId=ref,direction='down',depth=newDepth)
-                queue.put(newQObj)
-            
+                queue.put_nowait(newQObj)
             for cite in doc.citations:
-                
                 newQObj = qObject(docId=cite,direction='up',depth=newDepth)
-                queue.put(newQObj)
+                queue.put_nowait(newQObj)
+        
+        print('finished', curr_qObj.docId, queue.qsize())
 
-
-
-            sleep(10)
-    
-
-
-def main():
+if __name__ == "__main__":
     # These are set using environment variables
 
     user = os.environ['NEO4J_USER']
@@ -76,11 +84,12 @@ def main():
     refsQueue = Queue()
 
     # TESTING --------------------------------------------------------------
-    testId = '8862080'
-    qObj = qObject(docId=testId,direction='down',depth=0)
-    refsQueue.put(qObj)
+    testId = '12229'
+    downQObj = qObject(docId=testId,direction='down',depth=0)
+    upQObj = qObject(docId=testId,direction='up', depth=0)
+    refsQueue.put(downQObj)
+    refsQueue.put(upQObj)
     x = threading.Thread(target=thread_function, args=(db, refsQueue))
     x.start()
+    x.join()
     # TESTING ---------------------------------------------------------------
-
-main()
