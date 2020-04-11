@@ -1,78 +1,107 @@
+import asyncio
+import json
+import os
+import signal
+import threading
+from asyncio import Queue
+from time import sleep
+
 from database import Database
 from document import Document
-import os
-from queue import Queue
-from time import sleep
-import threading
+from servicebus import ScrapeMessageReceiver
+from utility import wait_unless_cancelled
+
+PAGE_RANK_PER_ITERATIONS = 10
 
 class qObject:
-    def __init__(self, docId, direction, depth, title=None):
+    def __init__(self, docId: str, direction: str, depth: int, title=None):
         self.docId = docId
         self.title = title 
         self.direction = direction
         self.depth = depth
 
-def thread_function(db: Database, queue):
-    # lock function
-    # pop from queue
-    # insert to database
-    # 
-    maxDepth = 3
+class ScrapeQueueItem:
+    def __init__(self, initialDocId: str, depth: int, sbMessageId: str):
+        self.docQueue = Queue()
+        self.docId = initialDocId
+        self.depth = depth
+        self.sbMessageId = sbMessageId
+
+        upQ = qObject(initialDocId, 'up', depth)
+        downQ = qObject(initialDocId, 'down', depth)
+        self.docQueue.put_nowait(upQ)
+        self.docQueue.put_nowait(downQ)
+
+async def run_queue(db: Database, queue: Queue, cancel_event: asyncio.Event):
+    smr = ScrapeMessageReceiver()
+
+    def on_receive_message(msg_id, msg_content):
+        msg_json = json.loads(msg_content)
+        if type(msg_json) is dict:
+            docId = msg_json['documentId']
+            depth = msg_json['depth']
+            if docId and depth:
+                newQueueItem = ScrapeQueueItem(docId, depth, msg_id)
+                print('queueing new document', docId, depth)
+                queue.put_nowait(newQueueItem)
+                return
+        # else, we received an invalid message.
+        print('received invalid message. ignoring.')
+
+    receive_task = asyncio.create_task(smr.receive_loop(on_receive_message, cancel_event))
+
     iterations = 1
-    pageRankPerIter = 10
-    while True:
-        curr_qObj = queue.get()
-        print('started', curr_qObj.docId)
-
-        # print(curr_qObj)
-        docId = curr_qObj.docId
-        docTitle = curr_qObj.title
-        direction = curr_qObj.direction
-        depth =curr_qObj.depth
-
-        refBool = True
-        citeBool = True
-
-        if direction == 'down':
-            citeBool = False 
-        elif direction == 'up':
-            refBool = False
+    while not cancel_event.is_set():
+        try:
+            currQueueItem: ScrapeQueueItem = await wait_unless_cancelled(queue.get(), cancel_event)
+        except asyncio.CancelledError:
+            break
         
-        if depth >= maxDepth:
-            print('skipping', curr_qObj.docId, queue.qsize())
-            continue
+        while not currQueueItem.docQueue.empty():
+            curr_qObj: qObject = await currQueueItem.docQueue.get()
+            
+            shouldGetRefs = curr_qObj.direction == 'down'
+            shouldGetCites = curr_qObj.direction == 'up'
 
-        newDepth = depth + 1
+            if curr_qObj.depth >= currQueueItem.depth:
+                print('skipping', curr_qObj.docId, currQueueItem.docQueue.qsize())
+                continue
 
-        if db.doc_is_visited(docId):
-            for ref in db.get_references(docId):
-                newQObj = qObject(docId=ref,direction='down',depth=newDepth)
-                queue.put_nowait(newQObj)
-            for cite in db.get_citations(docId):
-                newQObj = qObject(docId=cite,direction='up',depth=newDepth)
-                queue.put_nowait(newQObj)
-        else:
-            doc = Document(id=docId, title=docTitle, citeBool=citeBool, refBool=refBool)
-            # try:
-            #     doc = Document(id=docId, title=docTitle, citeBool=citeBool, refBool=refBool)
-            # except:
-            #     print('failed', curr_qObj.docId, queue.qsize())
-            #     continue
-            db.insert_document(doc)
-            iterations = (iterations + 1) % pageRankPerIter
-            if iterations == 0:
-                db.call_page_rank()
+            newDepth = curr_qObj.depth + 1
 
-            for ref in doc.references:                
-                newQObj = qObject(docId=ref,direction='down',depth=newDepth)
-                queue.put_nowait(newQObj)
-            for cite in doc.citations:
-                newQObj = qObject(docId=cite,direction='up',depth=newDepth)
-                queue.put_nowait(newQObj)
+            if db.doc_is_visited(curr_qObj.docId):
+                if shouldGetRefs:
+                    for ref in db.get_references(curr_qObj.docId):
+                        refQObj = qObject(ref, 'down', newDepth)
+                        currQueueItem.docQueue.put_nowait(refQObj)
+                if shouldGetCites:
+                    for cite in db.get_references(curr_qObj.docId):
+                        citeQObj = qObject(cite, 'up', newDepth)
+                        currQueueItem.docQueue.put_nowait(citeQObj)
+            else:
+                doc = Document(id=curr_qObj.docId, citeBool=shouldGetCites, refBool=shouldGetRefs)
+                db.insert_document(doc)
+                iterations = (iterations + 1) % PAGE_RANK_PER_ITERATIONS
+                if iterations == 0:
+                    db.call_page_rank()
+                
+                for ref in db.get_references(curr_qObj.docId):
+                    refQObj = qObject(ref, 'down', newDepth)
+                    currQueueItem.docQueue.put_nowait(refQObj)
+                for cite in db.get_references(curr_qObj.docId):
+                    citeQObj = qObject(cite, 'up', newDepth)
+                    currQueueItem.docQueue.put_nowait(citeQObj)
+            
+            print('finished', curr_qObj.docId, currQueueItem.docQueue.qsize())
         
-        print('finished', curr_qObj.docId, queue.qsize())
+        # when a queue finishes, send a message signalling completion
+        if currQueueItem.sbMessageId:
+            await smr.send_response(currQueueItem.sbMessageId, currQueueItem.docId)
+    
+    # await receive when loop is cancelled
+    await receive_task
 
-if __name__ == "__main__":
+async def main():
     # These are set using environment variables
 
     user = os.environ['NEO4J_USER']
@@ -80,16 +109,21 @@ if __name__ == "__main__":
     uri = os.environ['NEO4J_URI']
 
     db = Database(user=user, password=password, uri=uri)
+    scrapeQueue = Queue()
+    cancelEvent = asyncio.Event()
 
-    refsQueue = Queue()
+    # handle interrupt signal
+    def signal_handler(signum, frame):
+        cancelEvent.set()
+    
+    signal.signal(signal.SIGINT, signal_handler)
 
-    # TESTING --------------------------------------------------------------
-    testId = '12229'
-    downQObj = qObject(docId=testId,direction='down',depth=0)
-    upQObj = qObject(docId=testId,direction='up', depth=0)
-    refsQueue.put(downQObj)
-    refsQueue.put(upQObj)
-    x = threading.Thread(target=thread_function, args=(db, refsQueue))
-    x.start()
-    x.join()
-    # TESTING ---------------------------------------------------------------
+    # for testing
+    # testId = '12229'
+    # testQueueItem = ScrapeQueueItem(testId, 3, '')
+    # scrapeQueue.put_nowait(testQueueItem)
+
+    await run_queue(db, scrapeQueue, cancelEvent)
+
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -10,6 +10,7 @@ pylint = "*"
 requests = "*"
 neo4j = "*"
 python-dateutil = "*"
+azure-servicebus = "*"
 
 [requires]
 python_version = "3.7"
