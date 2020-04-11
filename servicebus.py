@@ -1,9 +1,10 @@
-import os
-import sys
-import signal
 import asyncio
-from azure.servicebus.aio import ServiceBusClient, Message, QueueClient
+import os
+import signal
+import sys
 import threading
+
+from azure.servicebus.aio import Message, QueueClient, ServiceBusClient
 
 SCRAPE_QUEUE_NAME = 'scrape'
 COMPLETE_QUEUE_NAME = 'scrape-complete'
@@ -29,13 +30,16 @@ class ScrapeMessageReceiver:
                     return
                 
                 message = await next_task
+                message_id = message.properties.message_id
                 msg_content = str(message)
-                on_scrape(msg_content)
-                async with self._complete_client.get_sender() as reply_sender:
-                    reply_msg = Message(msg_content)
-                    reply_msg.properties.correlation_id = message.properties.message_id
-                    await reply_sender.send(reply_msg)
+                on_scrape(message_id, msg_content)
                 await message.complete()
+    
+    async def send_response(self, original_message_id, reply_content: str):
+        async with self._complete_client.get_sender() as reply_sender:
+            reply_msg = Message(reply_content)
+            reply_msg.properties.correlation_id = original_message_id
+            await reply_sender.send(reply_msg)            
 
 async def _test():
     print('testing service bus receive loop.')
