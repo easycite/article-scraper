@@ -37,8 +37,16 @@ async def run_queue(db: Database, queue: Queue, cancel_event: asyncio.Event):
 
     def on_receive_message(msg_id, msg_content):
         msg_json = json.loads(msg_content)
-        newQueueItem = ScrapeQueueItem(msg_json['documentId'], msg_json['depth'], msg_id)
-        queue.put_nowait(newQueueItem)
+        if type(msg_json) is dict:
+            docId = msg_json['documentId']
+            depth = msg_json['depth']
+            if docId and depth:
+                newQueueItem = ScrapeQueueItem(docId, depth, msg_id)
+                print('queueing new document', docId, depth)
+                queue.put_nowait(newQueueItem)
+                return
+        # else, we received an invalid message.
+        print('received invalid message. ignoring.')
 
     receive_task = asyncio.create_task(smr.receive_loop(on_receive_message, cancel_event))
 

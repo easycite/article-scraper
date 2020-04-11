@@ -5,6 +5,7 @@ import sys
 import threading
 
 from azure.servicebus.aio import Message, QueueClient, ServiceBusClient
+from azure.servicebus.common.constants import ReceiveSettleMode
 
 SCRAPE_QUEUE_NAME = 'scrape'
 COMPLETE_QUEUE_NAME = 'scrape-complete'
@@ -16,7 +17,7 @@ class ScrapeMessageReceiver:
         self._complete_client = QueueClient.from_connection_string(connection_string, COMPLETE_QUEUE_NAME)
     
     async def receive_loop(self, on_scrape, cancel_event):
-        async with self._scrape_client.get_receiver() as messages:
+        async with self._scrape_client.get_receiver(mode=ReceiveSettleMode.ReceiveAndDelete) as messages:
             while True:
                 next_task = asyncio.create_task(messages.__anext__())
                 
@@ -32,8 +33,10 @@ class ScrapeMessageReceiver:
                 message = await next_task
                 message_id = message.properties.message_id
                 msg_content = str(message)
-                on_scrape(message_id, msg_content)
-                await message.complete()
+                try:
+                    on_scrape(message_id, msg_content)
+                except:
+                    print('Unexpected error:', sys.exc_info()[0])
     
     async def send_response(self, original_message_id, reply_content: str):
         async with self._complete_client.get_sender() as reply_sender:
