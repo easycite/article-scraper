@@ -27,8 +27,8 @@ class ScrapeQueueItem:
         self.depth = depth
         self.sbMessageId = sbMessageId
 
-        upQ = qObject(initialDocId, 'up', depth)
-        downQ = qObject(initialDocId, 'down', depth)
+        upQ = qObject(initialDocId, 'up', 0)
+        downQ = qObject(initialDocId, 'down', 0)
         self.docQueue.put_nowait(upQ)
         self.docQueue.put_nowait(downQ)
 
@@ -97,6 +97,7 @@ async def run_queue(db: Database, queue: Queue, cancel_event: asyncio.Event):
         # when a queue finishes, send a message signalling completion
         if currQueueItem.sbMessageId:
             await smr.send_response(currQueueItem.sbMessageId, currQueueItem.docId)
+        print('finished scraping document', currQueueItem.docId)
     
     # await receive when loop is cancelled
     await receive_task
@@ -124,6 +125,7 @@ async def main():
     # scrapeQueue.put_nowait(testQueueItem)
 
     await run_queue(db, scrapeQueue, cancelEvent)
+    print('shutting down.')
 
 if __name__ == "__main__":
     asyncio.run(main())
