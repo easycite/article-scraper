@@ -125,6 +125,8 @@ async def main():
     # testQueueItem = ScrapeQueueItem(testId, 3, '')
     # scrapeQueue.put_nowait(testQueueItem)
 
+    print('ready')
+
     await run_queue(db, scrapeQueue, cancelEvent)
     print('shutting down.')
 
