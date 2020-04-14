@@ -41,6 +41,15 @@ class Database:
         with self.driver.session() as session:
             query = "CALL algo.pageRank('Document', 'CITES', { iterations: 20, dampingFactory: 0.85, write: true, writeProperty: 'pageRank' })"
             session.run(query)
+    
+    def compute_author_popularity(self):
+        with self.driver.session() as session:
+            query = '''
+                MATCH (a:Author)-[:AUTHORED]->(d:Document)
+                WITH a, sum(d.pageRank) as popularity
+                SET a.popularity = popularity
+            '''
+            session.run(query)
 
     def insert_document(self, doc):
         if not doc:
@@ -63,7 +72,8 @@ class Database:
                     MATCH (d:Document { id: $id })
                     MERGE (a:Author { name: $name })
                     ON CREATE SET a.firstName = $firstName,
-                        a.lastName = $lastName
+                        a.lastName = $lastName,
+                        a.popularity = 0.0
                     MERGE (a)-[:AUTHORED]->(d)
                 '''
                 session.run(authorQuery, id=doc.id, name=author['name'], firstName=author['firstName'], lastName=author['lastName'])
