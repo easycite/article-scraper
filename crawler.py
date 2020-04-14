@@ -84,6 +84,7 @@ async def run_queue(db: Database, queue: Queue, cancel_event: asyncio.Event):
                 iterations = (iterations + 1) % PAGE_RANK_PER_ITERATIONS
                 if iterations == 0:
                     db.call_page_rank()
+                    db.compute_author_popularity()
                 
                 for ref in db.get_references(curr_qObj.docId):
                     refQObj = qObject(ref, 'down', newDepth)
