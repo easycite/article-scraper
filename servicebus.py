@@ -8,13 +8,11 @@ from azure.servicebus.aio import Message, QueueClient, ServiceBusClient
 from azure.servicebus.common.constants import ReceiveSettleMode
 
 SCRAPE_QUEUE_NAME = 'scrape'
-COMPLETE_QUEUE_NAME = 'scrape-complete'
 
 class ScrapeMessageReceiver:
     def __init__(self):
-        connection_string = os.environ['SB_CONNECTION_STRING']
-        self._scrape_client = QueueClient.from_connection_string(connection_string, SCRAPE_QUEUE_NAME)
-        self._complete_client = QueueClient.from_connection_string(connection_string, COMPLETE_QUEUE_NAME)
+        self.connection_string = os.environ['SB_CONNECTION_STRING']
+        self._scrape_client = QueueClient.from_connection_string(self.connection_string, SCRAPE_QUEUE_NAME)
     
     async def receive_loop(self, on_scrape, cancel_event):
         async with self._scrape_client.get_receiver(mode=ReceiveSettleMode.ReceiveAndDelete) as messages:
@@ -30,32 +28,17 @@ class ScrapeMessageReceiver:
                         pass
                     return
                 
-                message = await next_task
+                message: Message = await next_task
                 message_id = message.properties.message_id
                 msg_content = str(message)
                 try:
                     on_scrape(message_id, msg_content)
                 except:
-                    print('Unexpected error:', sys.exc_info()[0])
+                    print('Unexpected error:', sys.exc_info()[1])
     
-    async def send_response(self, original_message_id, reply_content: str):
-        async with self._complete_client.get_sender() as reply_sender:
+    async def send_response(self, original_message_id: str, reply_to: str, reply_content: str):
+        complete_client = QueueClient.from_connection_string(self.connection_string, reply_to)
+        async with complete_client.get_sender() as reply_sender:
             reply_msg = Message(reply_content)
             reply_msg.properties.correlation_id = original_message_id
-            await reply_sender.send(reply_msg)            
-
-async def _test():
-    print('testing service bus receive loop.')
-
-    cancel_event = asyncio.Event()
-
-    def signal_handler(signum, frame):
-        cancel_event.set()
-    
-    signal.signal(signal.SIGINT, signal_handler)
-
-    receiver = ScrapeMessageReceiver()
-    await receiver.receive_loop(lambda message: print(message), cancel_event)
-
-if __name__ == '__main__':
-    asyncio.run(_test())
+            await reply_sender.send(reply_msg)

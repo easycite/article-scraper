@@ -21,11 +21,12 @@ class qObject:
         self.depth = depth
 
 class ScrapeQueueItem:
-    def __init__(self, initialDocId: str, depth: int, sbMessageId: str):
+    def __init__(self, initialDocId: str, depth: int, sbMessageId: str, sbReplyTo: str):
         self.docQueue = Queue()
         self.docId = initialDocId
         self.depth = depth
         self.sbMessageId = sbMessageId
+        self.sbReplyTo = sbReplyTo
 
         upQ = qObject(initialDocId, 'up', 0)
         downQ = qObject(initialDocId, 'down', 0)
@@ -36,12 +37,14 @@ async def run_queue(db: Database, queue: Queue, cancel_event: asyncio.Event):
     smr = ScrapeMessageReceiver()
 
     def on_receive_message(msg_id, msg_content):
+        print('here')
         msg_json = json.loads(msg_content)
         if type(msg_json) is dict:
             docId = msg_json['documentId']
             depth = msg_json['depth']
+            replyTo = msg_json['replyTo']
             if docId and depth:
-                newQueueItem = ScrapeQueueItem(docId, depth, msg_id)
+                newQueueItem = ScrapeQueueItem(docId, depth, msg_id, replyTo)
                 print('queueing new document', docId, depth)
                 queue.put_nowait(newQueueItem)
                 return
@@ -97,7 +100,7 @@ async def run_queue(db: Database, queue: Queue, cancel_event: asyncio.Event):
         
         # when a queue finishes, send a message signalling completion
         if currQueueItem.sbMessageId:
-            await smr.send_response(currQueueItem.sbMessageId, currQueueItem.docId)
+            await smr.send_response(currQueueItem.sbMessageId, currQueueItem.sbReplyTo, currQueueItem.docId)
         print('finished scraping document', currQueueItem.docId)
     
     # await receive when loop is cancelled
