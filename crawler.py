@@ -119,6 +119,7 @@ async def main():
         cancelEvent.set()
     
     signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
     # for testing
     # testId = '12229'
