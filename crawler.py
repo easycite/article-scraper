@@ -78,7 +78,7 @@ async def run_queue(db: Database, queue: Queue, cancel_event: asyncio.Event):
                         refQObj = qObject(ref, 'down', newDepth)
                         currQueueItem.docQueue.put_nowait(refQObj)
                 if shouldGetCites:
-                    for cite in db.get_references(curr_qObj.docId):
+                    for cite in db.get_citations(curr_qObj.docId):
                         citeQObj = qObject(cite, 'up', newDepth)
                         currQueueItem.docQueue.put_nowait(citeQObj)
             else:
@@ -92,7 +92,7 @@ async def run_queue(db: Database, queue: Queue, cancel_event: asyncio.Event):
                 for ref in db.get_references(curr_qObj.docId):
                     refQObj = qObject(ref, 'down', newDepth)
                     currQueueItem.docQueue.put_nowait(refQObj)
-                for cite in db.get_references(curr_qObj.docId):
+                for cite in db.get_citations(curr_qObj.docId):
                     citeQObj = qObject(cite, 'up', newDepth)
                     currQueueItem.docQueue.put_nowait(citeQObj)
             
