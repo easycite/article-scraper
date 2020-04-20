@@ -10,4 +10,4 @@ RUN pipenv install --system --deploy
 
 COPY . .
 
-CMD ["python", "crawler.py"]
+CMD ["python", "-u", "crawler.py"]
