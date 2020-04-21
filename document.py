@@ -12,7 +12,8 @@ class Document:
         self.id = id 
         self.title = title
         self.abstract = None
-        self.publishDate = None
+        self.publishDateStr = None
+        self.publishYear = None
         self.publicationTitle = None
         self.authors = []
         self.keywords = []
@@ -34,9 +35,15 @@ class Document:
             self.populate_info_from_doc_page()
 
             if refBool:
-                self.references = self.get_refs_by_doc_id(id)
+                try:
+                    self.references = self.get_refs_by_doc_id(id)
+                except:
+                    print('failed to get references for', id)
             if citeBool:
-                self.citations = self.get_citations_by_id(id)
+                try:
+                    self.citations = self.get_citations_by_id(id)
+                except:
+                    print('failed to get citations for', id)
 
         elif title != None:
             self.title = title
@@ -223,24 +230,21 @@ class Document:
             self.title = metadata['title']
             self.abstract = metadata.get('abstract')
 
-            self.publishDate = None
-            try:
-                date = metadata.get('chronOrPublicationDate', '')
-                dateMatch = datePattern.search(date)
-                if dateMatch is not None:
-                    date = dateMatch.group(1)
-                try:
-                    self.publishDate = parser.parse(date)
-                except:
-                    pass
-            except:
-                pass
+            pubYear = metadata.get('publicationYear')
 
-            if self.publishDate is None:
+            if pubYear is None:
+                pubYear = metadata.get('copyrightYear')
+            
+            if pubYear is not None:
                 try:
-                    self.publishDate = parser.parse(metadata.get('publicationDate', ''))
-                except:
+                    self.publishYear = int(pubYear)
+                except ValueError:
                     pass
+            
+            self.publishDateStr = metadata.get('chronOrPublicationDate')
+            
+            if self.publishDateStr is None:
+                self.publishDateStr = metadata.get('publicationDate')
             
             self.publicationTitle = metadata.get('publicationTitle')
             

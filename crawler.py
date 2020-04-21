@@ -37,7 +37,6 @@ async def run_queue(db: Database, queue: Queue, cancel_event: asyncio.Event):
     smr = ScrapeMessageReceiver()
 
     def on_receive_message(msg_id, msg_content):
-        print('here')
         msg_json = json.loads(msg_content)
         if type(msg_json) is dict:
             docId = msg_json['documentId']
@@ -61,26 +60,29 @@ async def run_queue(db: Database, queue: Queue, cancel_event: asyncio.Event):
             break
         
         while not currQueueItem.docQueue.empty():
+            if cancel_event.is_set():
+                break
             curr_qObj: qObject = await currQueueItem.docQueue.get()
             
             shouldGetRefs = curr_qObj.direction == 'down'
             shouldGetCites = curr_qObj.direction == 'up'
 
-            if curr_qObj.depth >= currQueueItem.depth:
+            if curr_qObj.depth > currQueueItem.depth:
                 print('skipping', curr_qObj.docId, currQueueItem.docQueue.qsize())
                 continue
 
             newDepth = curr_qObj.depth + 1
 
-            if db.doc_is_visited(curr_qObj.docId):
-                if shouldGetRefs:
-                    for ref in db.get_references(curr_qObj.docId):
-                        refQObj = qObject(ref, 'down', newDepth)
-                        currQueueItem.docQueue.put_nowait(refQObj)
-                if shouldGetCites:
-                    for cite in db.get_citations(curr_qObj.docId):
-                        citeQObj = qObject(cite, 'up', newDepth)
-                        currQueueItem.docQueue.put_nowait(citeQObj)
+            if not db.doc_needs_scrape(curr_qObj.docId):
+                if newDepth <= currQueueItem.depth:
+                    if shouldGetRefs:
+                        for ref in db.get_references(curr_qObj.docId):
+                            refQObj = qObject(ref, 'down', newDepth)
+                            currQueueItem.docQueue.put_nowait(refQObj)
+                    if shouldGetCites:
+                        for cite in db.get_citations(curr_qObj.docId):
+                            citeQObj = qObject(cite, 'up', newDepth)
+                            currQueueItem.docQueue.put_nowait(citeQObj)
             else:
                 doc = Document(id=curr_qObj.docId, citeBool=shouldGetCites, refBool=shouldGetRefs)
                 db.insert_document(doc)
@@ -89,12 +91,13 @@ async def run_queue(db: Database, queue: Queue, cancel_event: asyncio.Event):
                     db.call_page_rank()
                     db.compute_author_popularity()
                 
-                for ref in db.get_references(curr_qObj.docId):
-                    refQObj = qObject(ref, 'down', newDepth)
-                    currQueueItem.docQueue.put_nowait(refQObj)
-                for cite in db.get_citations(curr_qObj.docId):
-                    citeQObj = qObject(cite, 'up', newDepth)
-                    currQueueItem.docQueue.put_nowait(citeQObj)
+                if newDepth <= currQueueItem.depth:
+                    for ref in db.get_references(curr_qObj.docId):
+                        refQObj = qObject(ref, 'down', newDepth)
+                        currQueueItem.docQueue.put_nowait(refQObj)
+                    for cite in db.get_citations(curr_qObj.docId):
+                        citeQObj = qObject(cite, 'up', newDepth)
+                        currQueueItem.docQueue.put_nowait(citeQObj)
             
             print('finished', curr_qObj.docId, currQueueItem.docQueue.qsize())
         

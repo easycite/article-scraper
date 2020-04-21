@@ -13,6 +13,16 @@ class Database:
         self.uri = uri
         self.driver = GraphDatabase.driver(uri, auth=(user,password))
 
+    def doc_needs_scrape(self, docId):
+        with self.driver.session() as session:
+            query = '''
+                MATCH (d:Document { id: $id })
+                WHERE NOT EXISTS(d.publishYear) OR d.visited = false
+                RETURN 1
+            '''
+            result = session.run(query, id=docId).single()
+            return result is not None
+
     def doc_is_visited(self, docId):
         with self.driver.session() as session:
             existQuery = 'MATCH (d:Document { id: $id }) RETURN d.visited'
@@ -21,7 +31,11 @@ class Database:
     
     def get_references(self, docId):
         with self.driver.session() as session:
-            refQuery = 'MATCH (d:Document { id: $id })-[:CITES]->(ref:Document) RETURN ref.id'
+            refQuery = '''
+                MATCH (d:Document { id: $id })-[:CITES]->(ref:Document)
+                WHERE ref.visited = false OR NOT EXISTS(ref.publishYear)
+                RETURN ref.id
+            '''
             results = session.run(refQuery, id=docId).records()
             refs = []
             for result in results:
@@ -30,7 +44,11 @@ class Database:
 
     def get_citations(self, docId):
         with self.driver.session() as session:
-            refQuery = 'MATCH (d:Document { id: $id })<-[:CITES]-(ref:Document) RETURN ref.id'
+            refQuery = '''
+                MATCH (d:Document { id: $id })<-[:CITES]-(ref:Document)
+                WHERE ref.visited = false OR NOT EXISTS(ref.publishYear)
+                RETURN ref.id
+            '''
             results = session.run(refQuery, id=docId).records()
             refs = []
             for result in results:
@@ -59,13 +77,14 @@ class Database:
             # create the document if it doesn't already exist
             docQuery = '''
                 MERGE (d:Document { id: $id })
-                ON MATCH SET d.visited = true
                 SET d.title = $title,
                     d.abstract = $abstract,
-                    d.publishDate = $publishDate,
-                    d.publicationTitle = $publicationTitle
+                    d.publishYear = $publishYear,
+                    d.publishDateStr = $publishDateStr,
+                    d.publicationTitle = $publicationTitle,
+                    d.visited = true
             '''
-            session.run(docQuery, id=doc.id, title=doc.title, abstract=doc.abstract, publishDate=doc.publishDate, publicationTitle=doc.publicationTitle)
+            session.run(docQuery, id=doc.id, title=doc.title, abstract=doc.abstract, publishYear=doc.publishYear, publishDateStr=doc.publishDateStr, publicationTitle=doc.publicationTitle)
             
             for author in doc.authors:
                 authorQuery = '''
