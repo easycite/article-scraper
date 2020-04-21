@@ -35,15 +35,9 @@ class Document:
             self.populate_info_from_doc_page()
 
             if refBool:
-                try:
-                    self.references = self.get_refs_by_doc_id(id)
-                except:
-                    print('failed to get references for', id)
+                self.references = self.get_refs_by_doc_id(id)
             if citeBool:
-                try:
-                    self.citations = self.get_citations_by_id(id)
-                except:
-                    print('failed to get citations for', id)
+                self.citations = self.get_citations_by_id(id)
 
         elif title != None:
             self.title = title

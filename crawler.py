@@ -84,7 +84,12 @@ async def run_queue(db: Database, queue: Queue, cancel_event: asyncio.Event):
                             citeQObj = qObject(cite, 'up', newDepth)
                             currQueueItem.docQueue.put_nowait(citeQObj)
             else:
-                doc = Document(id=curr_qObj.docId, citeBool=shouldGetCites, refBool=shouldGetRefs)
+                try:
+                    doc = Document(id=curr_qObj.docId, citeBool=shouldGetCites, refBool=shouldGetRefs)
+                except:
+                    print('failed to get information for document', curr_qObj.docId)
+                    continue
+
                 db.insert_document(doc)
                 iterations = (iterations + 1) % PAGE_RANK_PER_ITERATIONS
                 if iterations == 0:
@@ -103,7 +108,10 @@ async def run_queue(db: Database, queue: Queue, cancel_event: asyncio.Event):
         
         # when a queue finishes, send a message signalling completion
         if currQueueItem.sbMessageId:
-            await smr.send_response(currQueueItem.sbMessageId, currQueueItem.sbReplyTo, currQueueItem.docId)
+            try:
+                await smr.send_response(currQueueItem.sbMessageId, currQueueItem.sbReplyTo, currQueueItem.docId)
+            except:
+                print('failed to send response', currQueueItem.docId)
         print('finished scraping document', currQueueItem.docId)
     
     # await receive when loop is cancelled
