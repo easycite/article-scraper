@@ -28,10 +28,8 @@ class ScrapeQueueItem:
         self.sbMessageId = sbMessageId
         self.sbReplyTo = sbReplyTo
 
-        upQ = qObject(initialDocId, 'up', 0)
-        downQ = qObject(initialDocId, 'down', 0)
-        self.docQueue.put_nowait(upQ)
-        self.docQueue.put_nowait(downQ)
+        newQ = qObject(initialDocId, 'both', 0)
+        self.docQueue.put_nowait(newQ)
 
 async def run_queue(db: Database, queue: Queue, cancel_event: asyncio.Event):
     smr = ScrapeMessageReceiver()
@@ -64,8 +62,8 @@ async def run_queue(db: Database, queue: Queue, cancel_event: asyncio.Event):
                 break
             curr_qObj: qObject = await currQueueItem.docQueue.get()
             
-            shouldGetRefs = curr_qObj.direction == 'down'
-            shouldGetCites = curr_qObj.direction == 'up'
+            shouldGetRefs = curr_qObj.direction == 'down' or curr_qObj.direction == 'both'
+            shouldGetCites = curr_qObj.direction == 'up' or curr_qObj.direction == 'both'
 
             if curr_qObj.depth > currQueueItem.depth:
                 print('skipping', curr_qObj.docId, currQueueItem.docQueue.qsize())
@@ -73,7 +71,8 @@ async def run_queue(db: Database, queue: Queue, cancel_event: asyncio.Event):
 
             newDepth = curr_qObj.depth + 1
 
-            if not db.doc_needs_scrape(curr_qObj.docId):
+            if not db.doc_needs_scrape(curr_qObj.docId, curr_qObj.direction):
+                print('no scrape needed')
                 if newDepth <= currQueueItem.depth:
                     if shouldGetRefs:
                         for ref in db.get_references(curr_qObj.docId):

@@ -13,15 +13,19 @@ class Database:
         self.uri = uri
         self.driver = GraphDatabase.driver(uri, auth=(user,password))
 
-    def doc_needs_scrape(self, docId):
+    def doc_needs_scrape(self, docId, direction):
         with self.driver.session() as session:
-            query = '''
-                MATCH (d:Document { id: $id })
-                WHERE NOT EXISTS(d.publishYear) OR d.visited = false
-                RETURN 1
+            frontArrow = '<-' if direction == 'up' else '-'
+            backArrow = '->' if direction == 'down' else '-'
+            query = f'''
+                MATCH (d:Document {{ id: $id }})
+                WHERE EXISTS(d.publishYear) AND d.visited = true
+                OPTIONAL MATCH (d:Document){frontArrow}[:CITES]{backArrow}(r:Document)
+                WHERE NOT EXISTS(r.publishYear) OR d.visited = false
+                RETURN d.id, count(r)
             '''
             result = session.run(query, id=docId).single()
-            return result is not None
+            return result is None or result[1] > 0
 
     def doc_is_visited(self, docId):
         with self.driver.session() as session:
